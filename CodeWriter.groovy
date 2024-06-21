@@ -1,16 +1,15 @@
 //Nessya Nakache AG743463
 //Elana Weiss 341390961
 
-import static Parser
-
 /**
  * The CodeWriter class is responsible for writing the assembly code that is the translation of the VM commands.
  * It takes an asmFile as input and writes the translated code to that file.
  */
 class CodeWriter {
 
-    private String currentFile
-    private int jumpFlag
+    private String vmFileName
+    private int jumpCount
+    private int callCount
     private final File asmFile
     private final boolean includeComments
 
@@ -20,7 +19,8 @@ class CodeWriter {
     CodeWriter(File asmFile, boolean includeComments = true) {
         this.asmFile = asmFile
         this.includeComments = includeComments
-        this.jumpFlag = 0
+        this.jumpCount = 0
+        this.callCount = 0
         // empty the file if it already exists
         if (asmFile.exists()) {
             asmFile.delete()
@@ -28,12 +28,14 @@ class CodeWriter {
     }
 
     // Inform the CodeWriter that the translation of a new VM file is started
-    // @param asmFileName is the name of the new VM file
-    void setFileName(String asmFileName) {
-        currentFile = asmFileName
+    // @param vmFileName is the name of the new VM file
+    void setFileName(String vmFileName) {
+        this.vmFileName = vmFileName
+        // remove ".vm" extension from the end of the file name
+        this.vmFileName = vmFileName.replace(".vm", "")
     }
 
-    // Write a comment to the output file
+    // Write a comment to the output file if includeComments is true
     // @param comment is the comment to write
     void writeComment(String comment) {
         if (includeComments) {
@@ -59,15 +61,15 @@ class CodeWriter {
                 break
             case 'gt':
                 asmFile.append(comparatorTemplate('JLE')) // not <=
-                jumpFlag++
+                jumpCount++
                 break
             case 'lt':
                 asmFile.append(comparatorTemplate('JGE')) // not >=
-                jumpFlag++
+                jumpCount++
                 break
             case 'eq':
                 asmFile.append(comparatorTemplate('JNE')) // not <>
-                jumpFlag++
+                jumpCount++
                 break
             case 'not':
                 asmFile.append(unaryTemplate() + 'M=!M\n')
@@ -84,11 +86,11 @@ class CodeWriter {
     // where the command is either PUSH or POP
     // @param segment is the memory segment (constant, local, argument, this, that, temp, pointer, static)
     // @param index is the index of the memory segment
-    // @param fileName is the name of the current file
-    void writePush(String segment, int index, String fileName) {
+    void writePush(String segment, int index) {
         switch (segment) {
             case 'constant':
-                asmFile.append("@${index}\n" + "D=A\n" + pushD())
+                // push constant index
+                asmFile.append(pushConstant(index))
                 break
             case 'local':
                 asmFile.append(pushSegment('LCL', index))
@@ -103,7 +105,7 @@ class CodeWriter {
                 asmFile.append(pushSegment('THAT', index))
                 break
             case 'static':
-                asmFile.append(pushStatic(index, fileName))
+                asmFile.append(pushStatic(index))
                 break
             case 'pointer':
                 asmFile.append(pushPointerOrTemp(index + 3))
@@ -120,8 +122,7 @@ class CodeWriter {
     // where the command is either PUSH or POP
     // @param segment is the memory segment (constant, local, argument, this, that, temp, pointer, static)
     // @param index is the index of the memory segment
-    // @param fileName is the name of the current file
-    void writePop(String segment, int index, String fileName) {
+    void writePop(String segment, int index) {
         switch (segment) {
             case 'local':
                 asmFile.append(popSegment('LCL', index))
@@ -136,7 +137,7 @@ class CodeWriter {
                 asmFile.append(popSegment('THAT', index))
                 break
             case 'static':
-                asmFile.append(popStatic(index, fileName))
+                asmFile.append(popStatic(index))
                 break
             case 'pointer':
                 asmFile.append(popPointerOrTemp(index + 3))
@@ -147,6 +148,155 @@ class CodeWriter {
             default:
                 throw new IllegalArgumentException("Invalid segment for POP command: ${segment}")
         }
+    }
+
+    // Write a label command
+    // @param label is the label to write
+    void writeLabel(String label) {
+        asmFile.append("(${label})\n")
+    }
+
+    // Write a goto command
+    // @param label is the label to go to
+    void writeGoTo(String label) {
+        asmFile.append("""@${label}
+                         |0;JMP
+                         |""".stripMargin())
+    }
+
+    // Write an if-goto command
+    // @param label is the label to go to if the top of the stack is not zero
+    void writeIfGoTo(String label) {
+        asmFile.append(popD() +
+                       """@${label}
+                         |D;JNE
+                         |""".stripMargin())
+    }
+
+    // Write a function command
+    // @param funcName is the name of the function
+    // @param numVars is the number of local variables
+    void writeFunction(String funcName, int numVars) {
+        writeLabel(funcName)
+        for (int i = 0; i < numVars; i++) {
+            asmFile.append(pushConstant(0))
+        }
+    }
+
+    // Write a call command
+    // @param funcName is the name of the function
+    // @param numArgs is the number of arguments
+    void writeCall(String funcName, int numArgs) {
+        callCount++
+        String funcLabel = "${funcName}\$ret.${callCount}"
+        // put return address on stack
+        asmFile.append("""@${funcLabel}
+                         |D=A
+                         |""".stripMargin() + pushD())
+        // push LCL, ARG, THIS, THAT onto stack
+        ['LCL', 'ARG', 'THIS', 'THAT'].each { segment ->
+            asmFile.append("""@${segment}
+                             |D=M
+                             |""".stripMargin() + pushD())
+        }
+        // reposition ARG to (SP - 5 - numArgs)
+        // reposition LCL to SP
+        asmFile.append("""@SP
+                         |D=M
+                         |@
+                         |D=D-A
+                         |@${numArgs}
+                         |D=D-A
+                         |@ARG
+                         |M=D
+                         |
+                         |@SP
+                         |D=M
+                         |@LCL
+                         |M=D
+                         |""".stripMargin())
+        writeGoTo(funcName)
+        writeLabel(funcLabel)
+        asmFile.append("\n")
+    }
+
+    // Write a return command
+    void writeReturn() {
+        //sets R13 to have LCL, the location of the end of the backed up segments
+        //sets R14 to have LCL-5, the location of the return address
+        //replace the first ARG position with the return value, which was poped from the stack
+        //set Stack Pointer to be ARG+1, right above where the return address is stored
+        //takes the backup addresses and puts them back into THAT, THIS, ARG, LCL
+        //jump to the return address
+        asmFile.append("""@LCL
+                         |D=M
+                         |@R13
+                         |M=D
+                         |@5
+                         |D=D-A
+                         |A=D
+                         |D=M
+                         |@R14
+                         |M=D
+                         |""".stripMargin()
+                        + popD()
+                        + """@ARG
+                             |A=M
+                             |M=D
+                             |
+                             |D=A+1
+                             |@SP
+                             |M=D
+                             |
+                             |@R13
+                             |A=M-1
+                             |D=M
+                             |@THAT
+                             |M=D
+                             |
+                             |@2
+                             |D=A
+                             |@R13
+                             |D=M-D
+                             |A=D
+                             |D=M
+                             |@THIS
+                             |M=D
+                             |
+                             |@3
+                             |D=A
+                             |@R13
+                             |D=M-D
+                             |A=D
+                             |D=M
+                             |@ARG
+                             |M=D
+                             |
+                             |@4
+                             |D=A
+                             |@R13
+                             |D=M-D
+                             |A=D
+                             |D=M
+                             |@LCL
+                             |M=D
+                             |
+                             
+                             |@R14
+                             |A=M
+                             |0;JMP
+                             |
+                             |""".stripMargin())
+    }
+
+    // Write the initial bootstrapping code
+    void writeInit() {
+        String setSP = """@256
+                        |D=A
+                        |@SP
+                        |M=D
+                        |""".stripMargin()
+        asmFile.append(setSP)
     }
 
     // Template for add, sub, and, or
@@ -160,7 +310,7 @@ class CodeWriter {
     }
 
     // Template for gt, lt, eq
-    // @param type is the type of comparison
+    // @param type is the type of comparison done internally (JLE, JGE, JNE)
     // @return the template for the comparison operation
     private String comparatorTemplate(String type) {
         return """@SP
@@ -168,18 +318,18 @@ class CodeWriter {
                  |D=M
                  |A=A-1
                  |D=M-D
-                 |@FALSE${jumpFlag}
+                 |@FALSE${jumpCount}
                  |D;${type}
                  |@SP
                  |A=M-1
                  |M=-1
-                 |@CONTINUE${jumpFlag}
+                 |@CONTINUE${jumpCount}
                  |0;JMP
-                 |(FALSE${jumpFlag})
+                 |(FALSE${jumpCount})
                  |@SP
                  |A=M-1
                  |M=0
-                 |(CONTINUE${jumpFlag})
+                 |(CONTINUE${jumpCount})
                  |""".stripMargin()
     }
 
@@ -189,6 +339,15 @@ class CodeWriter {
         return """@SP
                  |A=M-1
                  |""".stripMargin()
+    }
+
+    // Template for push constant
+    // @param constant is the constant of the memory segment
+    // @return the template for the push operation
+    private String pushConstant(int constant) {
+        return """@${constant}
+                 |D=A
+                 |""".stripMargin() + pushD()
     }
 
     // Template for push local, this, that, argument, temp, pointer, static
@@ -207,10 +366,9 @@ class CodeWriter {
 
     // Template for push static
     // @param index is the index of the memory segment
-    // @param fileName is the name of the current file
     // @return the template for the push operation
-    private String pushStatic(int index, String fileName) {
-        return """@${fileName}.${index}
+    private String pushStatic(int index) {
+        return """@${vmFileName}.${index}
                  |D=M
                  |""".stripMargin() + pushD()
     }
@@ -246,11 +404,10 @@ class CodeWriter {
 
     // Template for pop static
     // @param index is the index of the memory segment
-    // @param fileName is the name of the current file
     // @return the template for the pop operation
-    private String popStatic(int index, String fileName) {
+    private String popStatic(int index) {
         return popD() +
-               """@${fileName}.${index}
+               """@${vmFileName}.${index}
                   |M=D
                   |""".stripMargin()
     }

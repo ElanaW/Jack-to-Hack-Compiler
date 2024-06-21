@@ -35,12 +35,32 @@ class VMTranslator {
             // filter the list of files to keep only the .vm files
             vmFiles = dir.listFiles().findAll { it.name.endsWith(".vm") }
         }
-        // if a file was passed, change the extension to .asm, otherwise use the directory name
-        def asmFileName = args[0].endsWith(".vm") ? args[0].replace(".vm", ".asm") : args[0] + ".asm"
+        // create the file name for the .asm file based on the argument
+        def asmFileName = ""
+        // if a .vm file was passed, change the extension to .asm
+        if (args[0].endsWith(".vm")) {
+            asmFileName = args[0].replace(".vm", ".asm")
+        }
+        // otherwise, if a directory was passed, add .asm to the directory name and put it in the directory
+        else {
+            // get the base name of the directory without the full path
+            def basename = new File(args[0]).name
+        
+            // build the path to the .asm by combinining the directory name and the base name followed by .asm
+            asmFileName = new File(args[0], "${basename}.asm").toString()
+        }
+        // print the output file name
+        println "Output: $asmFileName"
         // create a file object for the .asm file we will write to
         def asmFile = new File(asmFileName)
         // create a CodeWriter object
         codeWriter = new CodeWriter(asmFile)
+        // write the bootstrap code to the .asm file
+        codeWriter.writeInit()
+        // if there is a file named Sys.vm in the directory, call Sys.init
+        if (vmFiles.any { it.name == "Sys.vm" }) {
+            codeWriter.writeCall("Sys.init", 0)
+        }
         // translate each .vm file
         for (File vmFile : vmFiles) {
             translate(vmFile)
@@ -63,13 +83,35 @@ class VMTranslator {
                     codeWriter.writeArithmetic(parser.arg1())
                     break
                 case Parser.C_PUSH:
-                    codeWriter.writePush(parser.arg1(), parser.arg2(), vmFile.name)
+                    codeWriter.writePush(parser.arg1(), parser.arg2())
                     break
                 case Parser.C_POP:
-                    codeWriter.writePop(parser.arg1(), parser.arg2(), vmFile.name)
+                    codeWriter.writePop(parser.arg1(), parser.arg2())
+                    break
+                case Parser.C_LABEL:
+                    codeWriter.writeLabel(parser.arg1())
+                    break
+                case Parser.C_GOTO:
+                    codeWriter.writeGoTo(parser.arg1())
+                    break
+                case Parser.C_IF:
+                    codeWriter.writeIfGoTo(parser.arg1())
+                    break
+                case Parser.C_FUNCTION:
+                    codeWriter.writeFunction(parser.arg1(), parser.arg2())
+                    break
+                case Parser.C_RETURN:
+                    codeWriter.writeReturn()
+                    break
+                case Parser.C_CALL:
+                    codeWriter.writeCall(parser.arg1(), parser.arg2())
                     break
                 case Parser.ERROR:
-                    println "Error: Invalid command: ${parser.currentCommand}"
+                    println "Error: Unrecognized command: ${parser.currentCommand}"
+                    System.exit(1)
+                    break
+                default:
+                    println "Error: Unhandled command type: ${parser.commandType()}"
                     System.exit(1)
                     break
             }

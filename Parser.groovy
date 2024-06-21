@@ -53,7 +53,7 @@ class Parser {
             return
         }
         // otherwise, remove any comments and leading/trailing whitespace and set the next command
-        this.nextCommand = line.trim().split(COMMENT)[0].trim()
+        this.nextCommand = line.split(COMMENT)[0].trim()
     }
 
     // Load the next command from the file - keep loading lines until a non-empty line is found
