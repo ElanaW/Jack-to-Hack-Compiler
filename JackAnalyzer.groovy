@@ -23,11 +23,13 @@ class JackAnalyzer {
         // create a JackTokenizer object
         def tokenizer = new JackTokenizer(jackFile)
         // while there are more tokens, print the token and its type
+        System.out.println("<tokens>")
         while (tokenizer.hasMoreTokens()) {
+            tokenizer.advance()
             def tokenType = tokenizer.tokenType()
             def token = tokenizer.token()
-            System.out.println("<${tokenType}>${token}</${tokenType}>")
-            tokenizer.advance()
+            System.out.println("<${tokenType}> ${token} </${tokenType}>")
         }
+        System.out.println("</tokens>")
     }
 }
