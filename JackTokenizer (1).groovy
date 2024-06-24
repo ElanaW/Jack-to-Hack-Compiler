@@ -27,6 +27,7 @@ class JackTokenizer {
     static final String IDENTIFIER_SYMBOL_REGEX = "[a-zA-Z0-9_]"
     static final String IDENTIFIER_REGEX = IDENTIFIER_FIRST_SYMBOL_REGEX + IDENTIFIER_SYMBOL_REGEX + "*"
     static final String DIGIT_REGEX = "[0-9]"
+    static final String INT_CONST_REGEX = DIGIT_REGEX + "+"
 
     // Constructor for the JackTokenizer class
     // @param jackFile the .jack file to tokenize
@@ -51,15 +52,13 @@ class JackTokenizer {
 
     // Returns the type of the current token
     String tokenType() {
-        if (currentToken == null) {
-            return null
-        } else if (KEYWORDS.contains(currentToken)) {
+        if (KEYWORDS.contains(currentToken)) {
             return KEYWORD
         } else if (SYMBOLS.contains(currentToken)) {
             return SYMBOL
         } else if (currentToken.matches(IDENTIFIER_REGEX)) {
             return IDENTIFIER
-        } else if (currentToken.matches(DIGIT_REGEX + "+")) {
+        } else if (currentToken.matches(INT_CONST_REGEX)) {
             return INT_CONST
         } else {
             return STRING_CONST
@@ -73,11 +72,11 @@ class JackTokenizer {
 
     // Load the next token from the file
     private void loadNextToken() {
+        // clear the next token which will be set in the loop if there are more tokens
+        nextToken = null
+        // load the next character from the file
         String nextChar = loadNextChar()
-        if (nextChar == null) {
-            nextToken = null
-            return
-        }
+        // loop until a token is found or the end of the file is reached
         while (nextChar != null) {
             // skip whitespace
             if (isWhitespace(nextChar)) {
@@ -111,8 +110,9 @@ class JackTokenizer {
                     nextChar = loadNextChar()
                     continue
                 }
-                // if the next character is not a comment, move the input back one character
+                // if the next character is not a comment, move the input back one character and set the next character back to "/"
                 else {
+                    jackInputStream.skip(-1)
                     nextChar = "/"
                 }
             }
@@ -131,7 +131,7 @@ class JackTokenizer {
                     token += nextChar
                     nextChar = loadNextChar()
                 }
-                // move the input back one character so it can be read again
+                // move the input back one character so it can be read again for the next token
                 if (nextChar != null) {
                     jackInputStream.skip(-1)
                 }
@@ -187,9 +187,6 @@ class JackTokenizer {
 
     // xml escape the token
     private String escapeToken(String token) {
-        if (token == null) {
-            return null
-        }
         return token.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     }
 }
