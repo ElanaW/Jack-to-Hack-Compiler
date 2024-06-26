@@ -70,6 +70,12 @@ class JackTokenizer {
         return escapeToken(currentToken)
     }
 
+
+    // xml escape the token
+    static String escapeToken(String token) {
+        return token.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+    }
+
     // Load the next token from the file
     private void loadNextToken() {
         // clear the next token which will be set in the loop if there are more tokens
@@ -183,10 +189,5 @@ class JackTokenizer {
     // check if the character is whitespace
     private boolean isWhitespace(String c) {
         return WHITESPACE.contains(c)
-    }
-
-    // xml escape the token
-    private String escapeToken(String token) {
-        return token.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     }
 }
