@@ -33,7 +33,9 @@ class CompilationEngine {
     }
 
     static String getText(token) {
-        return token.text().trim()
+        String text = token.text()
+        // remove the first and last characters from the token text because they are spaces
+        return text.substring(1, text.length() - 1)
     }
 
     // write a string to the output stream
