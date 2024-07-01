@@ -12,26 +12,62 @@ class CompilationEngine {
     // the amount of spaces to indent each time we indent
     private final int INDENT_SIZE = 2
     // array of XML tokens parsed from the input stream
-    private final Node[] tokens = []
+    private Node[] tokens = []
     // current token index
     private int tokenIndex = 0
+    // VMWriter object to write VM commands to a file
+    private VMWriter vmWriter
+    // symbol tables for the class and subroutine
+    private final SymbolTable symbolTable
+    // if statements counter
+    private int ifCounter = 0
+    // while statements counter
+    private int whileCounter = 0
+    // current class name
+    private String className
 
     // current indentation level
     private int indentLevel = 0
 
     // constructor that takes an input xml string and an output stream
-    CompilationEngine(String input, outputStream) {
+    CompilationEngine(parseTreeOutputStream) {
         // initialize the input and output streams
-        this.output = outputStream
-        // parse the tokens from the input stream
-        def root = new XmlParser().parseText(input)
-        this.tokens = root.children()
+        this.output = parseTreeOutputStream
+        // create symbol table
+        symbolTable = new SymbolTable()
     }
 
+    // compile a Jack source file
+    void compile(File jackFile) {
+        // create a string writer
+        def writer = new StringWriter()
+        // tokenize the Jack file and write the output to the writer
+        JackAnalyzer.tokenize(jackFile, writer)
+        // get the tokens as a string
+        def tokenXml = writer.toString()
+        // parse the tokens from the input stream
+        def root = new XmlParser().parseText(tokenXml)
+        this.tokens = root.children()
+        // initialize the token index
+        this.tokenIndex = 0
+        // vm file name
+        def vmFileName = jackFile.path.replace(".jack", ".vm")
+        // vm file object
+        def vmFile = new File(vmFileName)
+        // create a VMWriter object
+        this.vmWriter = new VMWriter(vmFile)
+        // get the class name from the file name
+        this.className = jackFile.name.replace(".jack", "")
+        // compile the class
+        compileClass()
+    }
+
+    // get the type of a token
     static String getType(token) {
         return token.name()
     }
 
+    // get the text of a token
     static String getText(token) {
         String text = token.text()
         // remove the first and last characters from the token text because they are spaces
@@ -72,6 +108,7 @@ class CompilationEngine {
         return tokenIndex + 1 < tokens.size() ? tokens[tokenIndex + 1] : null
     }
 
+    // throw a compilation error with the given message
     Node compilationError(String message) {
         // print context for debugging
         println (tokenIndex >= 3 ? tokens[tokenIndex - 3] : "")
@@ -148,15 +185,23 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the static or field keyword
+        String kind = getText(peekToken())
         writeToken()
         // write the type
+        String type = getText(peekToken())
         compileType()
         // write the variable name
+        String name = getText(peekToken())
         compileIdentifier()
+        // define the class variable in the symbol table
+        symbolTable.define(name, type, kind)
         // write the rest of the variable names
         while (getText(peekToken()) == ",") {
             writeToken()  // write the comma
+            name = getText(peekToken())
             compileIdentifier()
+            // define the class variable in the symbol table
+            symbolTable.define(name, type, kind)
         }
         // write the semicolon
         if (getText(peekToken()) != ";") {
@@ -184,7 +229,10 @@ class CompilationEngine {
         writeString("<subroutineDec>")
         // increment the indentation level
         indent()
+        // clear the subroutine symbol table
+        symbolTable.startSubroutine()
         // write the constructor, function, or method keyword
+        String subroutineKind = getText(peekToken())
         writeToken()
         // write the return type
         if (getText(peekToken()) == "void") {
@@ -193,12 +241,17 @@ class CompilationEngine {
             compileType()
         }
         // write the subroutine name
+        String subroutineName = getText(peekToken())
         compileIdentifier()
         // write the opening parenthesis
         if (getText(peekToken()) != "(") {
             compilationError("Expected '(', got '${getText(peekToken())}' instead")
         }
         writeToken()
+        // if the subroutine is a method, define "this" as an argument
+        if (subroutineKind == "method") {
+            symbolTable.define("this", className, "argument")
+        }
         // compile the parameter list
         compileParameterList()
         // write the closing parenthesis
@@ -207,7 +260,7 @@ class CompilationEngine {
         }
         writeToken()
         // compile the subroutine body
-        compileSubroutineBody()
+        compileSubroutineBody(subroutineKind, subroutineName)
         // decrement the indentation level
         unindent()
         // write the end of the subroutine
@@ -223,17 +276,25 @@ class CompilationEngine {
         // if the next token is a type, compile the parameter
         if (getText(peekToken()).matches("int|char|boolean") || getType(peekToken()) == "identifier") {
             // write the type
+            String type = getText(peekToken())
             compileType()
             // write the variable name
+            String name = getText(peekToken())
             compileIdentifier()
+            // define the parameter in the symbol table
+            symbolTable.define(name, type, "argument")
             // write the rest of the parameters
             while (getText(peekToken()) == ",") {
                 // write the comma
                 writeToken()
                 // write the type
+                type = getText(peekToken())
                 compileType()
                 // write the variable name
+                name = getText(peekToken())
                 compileIdentifier()
+                // define the parameter in the symbol table
+                symbolTable.define(name, type, "argument")
             }
         }
         // decrement the indentation level
@@ -243,7 +304,9 @@ class CompilationEngine {
     }
 
     // compile a subroutine body
-    void compileSubroutineBody() {
+    // @param subroutineKind the kind of subroutine (constructor, function, or method)
+    // @param subroutineName the name of the subroutine
+    void compileSubroutineBody(String subroutineKind, String subroutineName) {
         // write the start of the subroutine body
         writeString("<subroutineBody>")
         // increment the indentation level
@@ -256,6 +319,27 @@ class CompilationEngine {
         // compile the var declarations
         while (getText(peekToken()) == "var") {
             compileVarDec()
+        }
+        // write the function statement in VM
+        String functionName = className + "." + subroutineName
+        int numLocals = symbolTable.varCount("local")
+        vmWriter.writeFunction(functionName, numLocals)
+        // if the subroutine is a constructor, allocate memory for the object fields
+        if (subroutineKind == "constructor") {
+            int numFields = symbolTable.varCount("this")
+            // push the number of fields onto the stack as an argument
+            vmWriter.writePush("constant", numFields)
+            // call Memory.alloc - takes one argument, returns the address of the allocated memory
+            vmWriter.writeCall("Memory.alloc", 1)
+            // pop the address of the allocated memory into the "this" pointer
+            vmWriter.writePop("pointer", 0)
+        }
+        // if the subroutine is a method, set the "this" pointer to the first argument
+        if (subroutineKind == "method") {
+            // push the argument 0 onto the stack (the address of the object memory)
+            vmWriter.writePush("argument", 0)
+            // pop the argument 0 into the "this" pointer
+            vmWriter.writePop("pointer", 0)
         }
         // compile the statements
         compileStatements()
@@ -279,13 +363,20 @@ class CompilationEngine {
         // write the var keyword
         writeToken()
         // write the type
+        String type = getText(peekToken())
         compileType()
         // write the variable name
+        String name = getText(peekToken())
         compileIdentifier()
+        // define the variable in the symbol table
+        symbolTable.define(name, type, "local")
         // write the rest of the variable names
         while (getText(peekToken()) == ",") {
             writeToken()  // write the comma
+            name = getText(peekToken())
             compileIdentifier()
+            // define the variable in the symbol table
+            symbolTable.define(name, type, "local")
         }
         // write the semicolon
         if (getText(peekToken()) != ";") {
@@ -333,23 +424,45 @@ class CompilationEngine {
         // write the let keyword
         writeToken()
         // write the variable name
+        String name = getText(peekToken())
+        String kind = symbolTable.kindOf(name)
+        int index = symbolTable.indexOf(name)
         compileIdentifier()
         // write the array index if it exists
         if (getText(peekToken()) == "[") {
             writeToken()  // write the opening square bracket
+            // compile the expression and the index will be pushed onto the stack
             compileExpression()
+            // push address of the variable onto the stack
+            vmWriter.writePush(kind, index)
+            // write the closing square bracket
             if (getText(peekToken()) != "]") {
                 compilationError("Expected ']', got '${getText(peekToken())}' instead")
             }
             writeToken()  // write the closing square bracket
+            // add the index to the base address
+            vmWriter.writeArithmetic("add")
+            // write the equals sign
+            if (getText(peekToken()) != "=") {
+                compilationError("Expected '=', got '${getText(peekToken())}' instead")
+            }
+            writeToken()
+            // compile the expression
+            compileExpression()
+            // pop the result of the expression into the array
+            vmWriter.writePop("temp", 0)  // store the expression result in temp 0
+            vmWriter.writePop("pointer", 1)  // set THAT to the address of the array[i]
+            vmWriter.writePush("temp", 0)  // push the expression result onto the stack
+            vmWriter.writePop("that", 0)  // pop the expression result into array[i]
+        } else {
+            // write the equals sign
+            if (getText(peekToken()) != "=") {
+                compilationError("Expected '=', got '${getText(peekToken())}' instead")
+            }
+            writeToken()
+            // compile the expression
+            compileExpression()
         }
-        // write the equals sign
-        if (getText(peekToken()) != "=") {
-            compilationError("Expected '=', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
-        // compile the expression
-        compileExpression()
         // write the semicolon
         if (getText(peekToken()) != ";") {
             compilationError("Expected ';', got '${getText(peekToken())}' instead")
