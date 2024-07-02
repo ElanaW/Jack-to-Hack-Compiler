@@ -58,21 +58,36 @@ class SymbolTable {
     }
 
     // get the kind of the symbol with the given name
+    // @param name the name of the symbol
+    // @return the kind of the symbol, or null if the symbol is not defined
     String kindOf(String name) {
-        Symbol symbol = getSymbol(name)
-        return symbol.getKind()
+        try {
+            return getSymbol(name).getKind()
+        } catch (IllegalArgumentException e) {
+            return null
+        }
     }
 
     // get the type of the symbol with the given name
+    // @param name the name of the symbol
+    // @return the type of the symbol, or null if the symbol is not defined
     String typeOf(String name) {
-        Symbol symbol = getSymbol(name)
-        return symbol.getType()
+        try {
+            return getSymbol(name).getType()
+        } catch (IllegalArgumentException e) {
+            return null
+        }
     }
 
     // get the index of the symbol with the given name
+    // @param name the name of the symbol
+    // @return the index of the symbol
     int indexOf(String name) {
-        Symbol symbol = getSymbol(name)
-        return symbol.getIndex()
+        try {
+            return getSymbol(name).getIndex()
+        } catch (IllegalArgumentException e) {
+            return null
+        }
     }
 
     // get the symbol with the given name from the symbol table

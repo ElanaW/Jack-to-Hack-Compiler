@@ -24,7 +24,7 @@ class CompilationEngine {
     // while statements counter
     private int whileCounter = 0
     // current class name
-    private String className
+    private String currentClassName
 
     // current indentation level
     private int indentLevel = 0
@@ -57,7 +57,7 @@ class CompilationEngine {
         // create a VMWriter object
         this.vmWriter = new VMWriter(vmFile)
         // get the class name from the file name
-        this.className = jackFile.name.replace(".jack", "")
+        this.currentClassName = jackFile.name.replace(".jack", "")
         // compile the class
         compileClass()
     }
@@ -250,7 +250,7 @@ class CompilationEngine {
         writeToken()
         // if the subroutine is a method, define "this" as an argument
         if (subroutineKind == "method") {
-            symbolTable.define("this", className, "argument")
+            symbolTable.define("this", currentClassName, "argument")
         }
         // compile the parameter list
         compileParameterList()
@@ -321,7 +321,7 @@ class CompilationEngine {
             compileVarDec()
         }
         // write the function statement in VM
-        String functionName = className + "." + subroutineName
+        String functionName = currentClassName + "." + subroutineName
         int numLocals = symbolTable.varCount("local")
         vmWriter.writeFunction(functionName, numLocals)
         // if the subroutine is a constructor, allocate memory for the object fields
@@ -447,7 +447,7 @@ class CompilationEngine {
                 compilationError("Expected '=', got '${getText(peekToken())}' instead")
             }
             writeToken()
-            // compile the expression
+            // compile the expression and the result will be pushed onto the stack
             compileExpression()
             // pop the result of the expression into the array
             vmWriter.writePop("temp", 0)  // store the expression result in temp 0
@@ -460,8 +460,10 @@ class CompilationEngine {
                 compilationError("Expected '=', got '${getText(peekToken())}' instead")
             }
             writeToken()
-            // compile the expression
+            // compile the expression and the result will be pushed onto the stack
             compileExpression()
+            // pop the result of the expression into the variable
+            vmWriter.writePop(kind, index)
         }
         // write the semicolon
         if (getText(peekToken()) != ";") {
@@ -480,6 +482,11 @@ class CompilationEngine {
         writeString("<ifStatement>")
         // increment the indentation level
         indent()
+        // set up labels for the if statement
+        String ifTrueLabel = "IF_TRUE" + ifCounter
+        String ifFalseLabel = "IF_FALSE" + ifCounter
+        String ifEndLabel = "IF_END" + ifCounter
+        ifCounter++
         // write the if keyword
         writeToken()
         // write the opening parenthesis
@@ -487,8 +494,13 @@ class CompilationEngine {
             compilationError("Expected '(', got '${getText(peekToken())}' instead")
         }
         writeToken()
-        // compile the expression
+        // compile the expression and the result will be pushed onto the stack
         compileExpression()
+        // jump to the correct label based on the expression result
+        vmWriter.writeIf(ifTrueLabel)  // if the expression is true (non-zero), jump to the if true label
+        vmWriter.writeGoto(ifFalseLabel)  // otherwise, jump to the false label
+        // write the if true label
+        vmWriter.writeLabel(ifTrueLabel)
         // write the closing parenthesis
         if (getText(peekToken()) != ")") {
             compilationError("Expected ')', got '${getText(peekToken())}' instead")
@@ -508,7 +520,12 @@ class CompilationEngine {
         writeToken()
         // write the else clause if it exists
         if (getText(peekToken()) == "else") {
-            writeToken()  // write the else keyword
+            // if we completed the if statement, jump to the end
+            vmWriter.writeGoto(ifEndLabel)
+            // write the if false label
+            vmWriter.writeLabel(ifFalseLabel)
+            // write the else keyword
+            writeToken()
             // write the opening curly brace
             if (getText(peekToken()) != "{") {
                 compilationError("Expected '{', got '${getText(peekToken())}' instead")
@@ -521,6 +538,12 @@ class CompilationEngine {
                 compilationError("Expected '}', got '${getText(peekToken())}' instead")
             }
             writeToken()
+            // write the end label
+            vmWriter.writeLabel(ifEndLabel)
+        }
+        // if there is no else clause, write the if false label at the end
+        else {
+            vmWriter.writeLabel(ifFalseLabel)
         }
         // decrement the indentation level
         unindent()
@@ -534,15 +557,24 @@ class CompilationEngine {
         writeString("<whileStatement>")
         // increment the indentation level
         indent()
+        // set up labels
+        String whileLabel = "WHILE_EXP" + whileCounter
+        String whileEndLabel = "WHILE_END" + whileCounter
+        whileCounter++
         // write the while keyword
         writeToken()
+        // write the while label
+        vmWriter.writeLabel(whileLabel)
         // write the opening parenthesis
         if (getText(peekToken()) != "(") {
             compilationError("Expected '(', got '${getText(peekToken())}' instead")
         }
         writeToken()
-        // compile the expression
+        // compile the expression and the result will be pushed onto the stack
         compileExpression()
+        // jump out of the loop if the expression is zero
+        vmWriter.writeArithmetic("not")  // negate result so that we jump if the expression *is* zero
+        vmWriter.writeIf(whileEndLabel)  // if the negated result is not zero (expression was zero), jump to the end of the loop
         // write the closing parenthesis
         if (getText(peekToken()) != ")") {
             compilationError("Expected ')', got '${getText(peekToken())}' instead")
@@ -560,6 +592,9 @@ class CompilationEngine {
             compilationError("Expected '}', got '${getText(peekToken())}' instead")
         }
         writeToken()
+        // write the end of the loop
+        vmWriter.writeGoto(whileLabel)  // go back to the start of the loop
+        vmWriter.writeLabel(whileEndLabel)  // end of the loop
         // decrement the indentation level
         unindent()
         // write the end of the while statement
@@ -585,6 +620,61 @@ class CompilationEngine {
         unindent()
         // write the end of the do statement
         writeString("</doStatement>")
+    }
+
+    // parse a subroutine call for a do statement
+    void compileSubroutineCall() {
+        // optionally write the class name or var name
+        if (getType(peekToken()) == "identifier") {
+            String name = getText(peekToken())
+            Boolean isMethod = false  // if the subroutine is a method, we need to add the 'this' pointer as an argument
+            String subroutineName = ""
+            writeToken()  // write the varName/className/subroutineName
+            // if the next token is a period, write it and the subroutine name
+            if (getText(peekToken()) == ".") {
+                // determine if this is a variable or a class name
+                // if found in the symbol table, it is a variable, so the subroutine is a method
+                String type = symbolTable.typeOf(name)
+                if (type != null) {
+                    isMethod = true
+                    String kind = symbolTable.kindOf(name)
+                    int index = symbolTable.indexOf(name)
+                    vmWriter.writePush(kind, index)  // push the object onto the stack
+                    // build name using the class name of the variable and the subroutine name
+                    subroutineName = type + "." + getText(peekToken())
+                }
+                // if the variable is not found in the symbol table, it is a class name
+                else {
+                    // build name using the class name and the subroutine name
+                    subroutineName = name + "." + getText(peekToken())
+                }
+                writeToken()  // write the period
+                compileIdentifier()  // write the subroutine name
+            } else {
+                // if no "." is found, this is a method of the current class
+                subroutineName = currentClassName + "." + name
+                vmWriter.writePush("pointer", 0)  // push the "this" pointer onto the stack
+                isMethod = true
+            }
+            // write the opening parenthesis
+            if (getText(peekToken()) != "(") {
+                compilationError("Expected '(', got '${getText(peekToken())}' instead")
+            }
+            writeToken()
+            // compile the expression list
+            int numArgs = compileExpressionList()
+            if (isMethod) {
+                numArgs++  // add the "this" pointer as an argument
+            }
+            vmWriter.writeCall(subroutineName, numArgs)
+            // write the closing parenthesis
+            if (getText(peekToken()) != ")") {
+                compilationError("Expected ')', got '${getText(peekToken())}' instead")
+            }
+            writeToken()
+            // pop the result of the subroutine call off the stack to discard it
+            vmWriter.writePop("temp", 0)
+        }
     }
 
     // parse a return statement
@@ -685,31 +775,6 @@ class CompilationEngine {
         unindent()
         // write the end of the term
         writeString("</term>")
-    }
-
-    // parse a subroutine call
-    void compileSubroutineCall() {
-        // optionally write the class name or var name
-        if (getType(peekToken()) == "identifier") {
-            writeToken()  // write the varName/className/subroutineName
-            // if the next token is a period, write it and the subroutine name
-            if (getText(peekToken()) == ".") {
-                writeToken()  // write the period
-                compileIdentifier()  // write the subroutine name
-            }
-            // write the opening parenthesis
-            if (getText(peekToken()) != "(") {
-                compilationError("Expected '(', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
-            // compile the expression list
-            compileExpressionList()
-            // write the closing parenthesis
-            if (getText(peekToken()) != ")") {
-                compilationError("Expected ')', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
-        }
     }
 
     // parse an expression list
