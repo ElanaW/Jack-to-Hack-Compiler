@@ -58,6 +58,8 @@ class CompilationEngine {
         this.vmWriter = new VMWriter(vmFile)
         // get the class name from the file name
         this.currentClassName = jackFile.name.replace(".jack", "")
+        // clear the symbol table
+        symbolTable.startClass()
         // compile the class
         compileClass()
     }
@@ -611,6 +613,8 @@ class CompilationEngine {
         writeToken()
         // compile the subroutine call
         compileSubroutineCall()
+        // pop the result of the subroutine call off the stack to discard it
+        vmWriter.writePop("temp", 0)
         // write the semicolon
         if (getText(peekToken()) != ";") {
             compilationError("Expected ';', got '${getText(peekToken())}' instead")
@@ -622,7 +626,7 @@ class CompilationEngine {
         writeString("</doStatement>")
     }
 
-    // parse a subroutine call for a do statement
+    // parse a subroutine call
     void compileSubroutineCall() {
         // optionally write the class name or var name
         if (getType(peekToken()) == "identifier") {
@@ -672,8 +676,6 @@ class CompilationEngine {
                 compilationError("Expected ')', got '${getText(peekToken())}' instead")
             }
             writeToken()
-            // pop the result of the subroutine call off the stack to discard it
-            vmWriter.writePop("temp", 0)
         }
     }
 
@@ -812,52 +814,7 @@ class CompilationEngine {
             }
             // if the next token is a period or opening parenthesis, this is a subroutine call
             else if (lookaheadToken == "." || lookaheadToken == "(") {
-                String name = getText(peekToken())
-                Boolean isMethod = false  // if the subroutine is a method, we need to add the 'this' pointer as an argument
-                String subroutineName = ""
-                writeToken()  // write the varName/className/subroutineName
-                // if the next token is a period, write it and the subroutine name
-                if (getText(peekToken()) == ".") {
-                    writeToken()  // write the period
-                    // determine if this is a variable or a class name
-                    // if found in the symbol table, it is a variable, so the subroutine is a method
-                    String type = symbolTable.typeOf(name)
-                    if (type != null) {
-                        isMethod = true
-                        String kind = symbolTable.kindOf(name)
-                        int index = symbolTable.indexOf(name)
-                        vmWriter.writePush(kind, index)  // push the object onto the stack
-                        // build name using the class name of the variable and the subroutine name
-                        subroutineName = type + "." + getText(peekToken())
-                    }
-                    // if the variable is not found in the symbol table, it is a class name
-                    else {
-                        // build name using the class name and the subroutine name
-                        subroutineName = name + "." + getText(peekToken())
-                    }
-                    compileIdentifier()  // write the subroutine name
-                } else {
-                    // if no "." is found, this is a method of the current class
-                    subroutineName = currentClassName + "." + name
-                    vmWriter.writePush("pointer", 0)  // push the "this" pointer onto the stack
-                    isMethod = true
-                }
-                // write the opening parenthesis
-                if (getText(peekToken()) != "(") {
-                    compilationError("Expected '(', got '${getText(peekToken())}' instead")
-                }
-                writeToken()
-                // compile the expression list
-                int numArgs = compileExpressionList()
-                if (isMethod) {
-                    numArgs++  // add the "this" pointer as an argument
-                }
-                vmWriter.writeCall(subroutineName, numArgs)
-                // write the closing parenthesis
-                if (getText(peekToken()) != ")") {
-                    compilationError("Expected ')', got '${getText(peekToken())}' instead")
-                }
-                writeToken()
+                compileSubroutineCall()
             }
             // if the next token is not an opening square bracket, period, or opening parenthesis, this is a variable
             else {
@@ -880,13 +837,14 @@ class CompilationEngine {
         }
         // handle unary operator
         else if (getText(peekToken()) == "-" || getText(peekToken()) == "~") {
+            String operator = getText(peekToken())
             writeToken()  // write the unary operator
             // compile the term and the result will be pushed onto the stack
             compileTerm()
             // write the VM command for the unary operator
-            if (getText(getLastToken()) == "-") {
+            if (operator == "-") {
                 vmWriter.writeCommand("neg")
-            } else if (getText(getLastToken()) == "~") {
+            } else if (operator == "~") {
                 vmWriter.writeCommand("not")
             }
         }

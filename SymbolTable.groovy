@@ -21,6 +21,12 @@ class SymbolTable {
         subroutineTable.clear()
     }
 
+    // start a new class scope
+    void startClass() {
+        // clear the class symbol table
+        classTable.clear()
+    }
+
     // add a new symbol to the class symbol table
     void define(String name, String type, String kind) {
         // if the kind is "field", change it to "this"
