@@ -19,6 +19,14 @@ class VMWriter {
     }
 
     /**
+     * Write an command such as an arithmetic command to the .vm file.
+     * @param command the command to write
+     */
+    void writeCommand(String command) {
+        vmFile.append("$command\n")
+    }
+
+    /**
      * Write a push command to the .vm file.
      * @param segment the segment to push from
      * @param index the index to push from
@@ -34,14 +42,6 @@ class VMWriter {
      */
     void writePop(String segment, int index) {
         vmFile.append("pop $segment $index\n")
-    }
-
-    /**
-     * Write an arithmetic command to the .vm file.
-     * @param command the arithmetic command
-     */
-    void writeArithmetic(String command) {
-        vmFile.append("$command\n")
     }
 
     /**

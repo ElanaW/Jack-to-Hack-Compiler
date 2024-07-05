@@ -91,7 +91,7 @@ class SymbolTable {
     }
 
     // get the symbol with the given name from the symbol table
-    private String getSymbol(String name) {
+    private Symbol getSymbol(String name) {
         // if the symbol is in the subroutine symbol table, return it
         if (subroutineTable.containsKey(name)) {
             return subroutineTable[name]

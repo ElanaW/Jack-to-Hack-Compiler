@@ -441,7 +441,7 @@ class CompilationEngine {
             }
             writeToken()  // write the closing square bracket
             // add the index to the base address
-            vmWriter.writeArithmetic("add")
+            vmWriter.writeCommand("add")
             // write the equals sign
             if (getText(peekToken()) != "=") {
                 compilationError("Expected '=', got '${getText(peekToken())}' instead")
@@ -497,7 +497,7 @@ class CompilationEngine {
         // compile the expression and the result will be pushed onto the stack
         compileExpression()
         // jump to the correct label based on the expression result
-        vmWriter.writeIf(ifTrueLabel)  // if the expression is true (non-zero), jump to the if true label
+        vmWriter.writeIfGoto(ifTrueLabel)  // if the expression is true (non-zero), jump to the if true label
         vmWriter.writeGoto(ifFalseLabel)  // otherwise, jump to the false label
         // write the if true label
         vmWriter.writeLabel(ifTrueLabel)
@@ -573,8 +573,8 @@ class CompilationEngine {
         // compile the expression and the result will be pushed onto the stack
         compileExpression()
         // jump out of the loop if the expression is zero
-        vmWriter.writeArithmetic("not")  // negate result so that we jump if the expression *is* zero
-        vmWriter.writeIf(whileEndLabel)  // if the negated result is not zero (expression was zero), jump to the end of the loop
+        vmWriter.writeCommand("not")  // negate result so that we jump if the expression *is* zero
+        vmWriter.writeIfGoto(whileEndLabel)  // if the negated result is not zero (expression was zero), jump to the end of the loop
         // write the closing parenthesis
         if (getText(peekToken()) != ")") {
             compilationError("Expected ')', got '${getText(peekToken())}' instead")
@@ -632,6 +632,7 @@ class CompilationEngine {
             writeToken()  // write the varName/className/subroutineName
             // if the next token is a period, write it and the subroutine name
             if (getText(peekToken()) == ".") {
+                writeToken()  // write the period
                 // determine if this is a variable or a class name
                 // if found in the symbol table, it is a variable, so the subroutine is a method
                 String type = symbolTable.typeOf(name)
@@ -648,7 +649,6 @@ class CompilationEngine {
                     // build name using the class name and the subroutine name
                     subroutineName = name + "." + getText(peekToken())
                 }
-                writeToken()  // write the period
                 compileIdentifier()  // write the subroutine name
             } else {
                 // if no "." is found, this is a method of the current class
@@ -687,13 +687,20 @@ class CompilationEngine {
         writeToken()
         // write the expression if it exists
         if (getText(peekToken()) != ";") {
+            // compile the expression and the result will be pushed onto the stack
             compileExpression()
+        }
+        // if there is no expression, push 0 onto the stack
+        else {
+            vmWriter.writePush("constant", 0)
         }
         // write the semicolon
         if (getText(peekToken()) != ";") {
             compilationError("Expected ';', got '${getText(peekToken())}' instead")
         }
         writeToken()
+        // write the return statement in VM
+        vmWriter.writeReturn()
         // decrement the indentation level
         unindent()
         // write the end of the return statement
@@ -708,10 +715,28 @@ class CompilationEngine {
         indent()
         // compile the term
         compileTerm()
+        // mapping of symbols to VM arithmetic commands
+        def opMap = [
+            "+" : "add",
+            "-" : "sub",
+            "*" : "call Math.multiply 2",
+            "/" : "call Math.divide 2",
+            "&" : "and",
+            "|" : "or",
+            "<" : "lt",
+            ">" : "gt",
+            "=" : "eq"
+        ]
         // compile the rest of the terms
-        while (getText(peekToken()) == "+" || getText(peekToken()) == "-" || getText(peekToken()) == "*" || getText(peekToken()) == "/" || getText(peekToken()) == "&" || getText(peekToken()) == "|" || getText(peekToken()) == "<" || getText(peekToken()) == ">" || getText(peekToken()) == "=") {
+        String nextToken = getText(peekToken())
+        // if the next token is an operator, compile the next term and write the VM command for the operation
+        while (opMap.containsKey(nextToken)) {
             writeToken()  // write the operator
-            compileTerm()
+            compileTerm()  // compile the term
+            // write the VM command for the operator
+            vmWriter.writeCommand(opMap[nextToken])
+            // get the next token to check if there is another operator
+            nextToken = getText(peekToken())
         }
         // decrement the indentation level
         unindent()
@@ -726,35 +751,122 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the term
-        // handle integer constant, string constant, keyword constant
-        if (getType(peekToken()) == "integerConstant" || getType(peekToken()) == "stringConstant" || getText(peekToken()).matches("true|false|null|this")) {
-            writeToken()
+        // handle integer constant
+        if (getType(peekToken()) == "integerConstant") {
+            int value = Integer.parseInt(getText(peekToken()))
+            writeToken()  // write the integer constant
+            vmWriter.writePush("constant", value)
+        }
+        // handle string constant
+        else if (getType(peekToken()) == "stringConstant") {
+            String value = getText(peekToken())
+            writeToken()  // write the string constant
+            // push the length of the string onto the stack
+            vmWriter.writePush("constant", value.length())
+            // call String.new - takes one argument, returns the address of the allocated memory
+            vmWriter.writeCall("String.new", 1)
+            // push each character of the string onto the stack
+            for (int i = 0; i < value.length(); i++) {
+                vmWriter.writePush("constant", Character.codePointAt(value, i))
+                vmWriter.writeCall("String.appendChar", 2)
+            }
+        }
+        // handle keyword constants
+        else if (getText(peekToken()).matches("true|false|null|this")) {
+            String keyword = getText(peekToken())
+            writeToken()  // write the keyword constant
+            if (keyword == "true") {
+                vmWriter.writePush("constant", 0)
+                vmWriter.writeCommand("not")
+            } else if (keyword == "false" || keyword == "null") {
+                vmWriter.writePush("constant", 0)
+            } else if (keyword == "this") {
+                vmWriter.writePush("pointer", 0)
+            }
         }
         // handle varname, varName[expression], subroutineCall
         else if (getType(peekToken()) == "identifier") {
-            writeToken()  // write the varName/className/subroutineName
-            // handle varName[expression]
-            if (getText(peekToken()) == "[") {
-                writeToken()  // write the opening square bracket
+            String lookaheadToken = getText(peekLookahead())
+            // if the next token is an opening square bracket, this is an array access
+            if (lookaheadToken == "[") {
+                String name = getText(peekToken())
+                String kind = symbolTable.kindOf(name)
+                int index = symbolTable.indexOf(name)
+                compileIdentifier()  // write the variable name
+                // write the opening square bracket
+                writeToken()
+                // compile the expression and the index will be pushed onto the stack
                 compileExpression()
+                // push the address of the variable onto the stack
+                vmWriter.writePush(kind, index)
+                // add the index to the base address
+                vmWriter.writeCommand("add")
+                // pop the result of the expression into the array
+                vmWriter.writePop("pointer", 1)  // set THAT to the address of the array[i]
+                vmWriter.writePush("that", 0)  // push the value of the array[i] onto the stack
+                // write the closing square bracket
                 if (getText(peekToken()) != "]") {
                     compilationError("Expected ']', got '${getText(peekToken())}' instead")
                 }
-                writeToken()  // write the closing square bracket
+                writeToken()
             }
-            // handle identifier.subroutineName subroutine call
-            else if (getText(peekToken()) == ".") {
-                writeToken()  // write the period
-                compileIdentifier()  // write the subroutine name
-            }
-            // handle rest of subroutine call
-            if (getText(peekToken()) == "(") {
-                writeToken()  // write the opening parenthesis
-                compileExpressionList()
+            // if the next token is a period or opening parenthesis, this is a subroutine call
+            else if (lookaheadToken == "." || lookaheadToken == "(") {
+                String name = getText(peekToken())
+                Boolean isMethod = false  // if the subroutine is a method, we need to add the 'this' pointer as an argument
+                String subroutineName = ""
+                writeToken()  // write the varName/className/subroutineName
+                // if the next token is a period, write it and the subroutine name
+                if (getText(peekToken()) == ".") {
+                    writeToken()  // write the period
+                    // determine if this is a variable or a class name
+                    // if found in the symbol table, it is a variable, so the subroutine is a method
+                    String type = symbolTable.typeOf(name)
+                    if (type != null) {
+                        isMethod = true
+                        String kind = symbolTable.kindOf(name)
+                        int index = symbolTable.indexOf(name)
+                        vmWriter.writePush(kind, index)  // push the object onto the stack
+                        // build name using the class name of the variable and the subroutine name
+                        subroutineName = type + "." + getText(peekToken())
+                    }
+                    // if the variable is not found in the symbol table, it is a class name
+                    else {
+                        // build name using the class name and the subroutine name
+                        subroutineName = name + "." + getText(peekToken())
+                    }
+                    compileIdentifier()  // write the subroutine name
+                } else {
+                    // if no "." is found, this is a method of the current class
+                    subroutineName = currentClassName + "." + name
+                    vmWriter.writePush("pointer", 0)  // push the "this" pointer onto the stack
+                    isMethod = true
+                }
+                // write the opening parenthesis
+                if (getText(peekToken()) != "(") {
+                    compilationError("Expected '(', got '${getText(peekToken())}' instead")
+                }
+                writeToken()
+                // compile the expression list
+                int numArgs = compileExpressionList()
+                if (isMethod) {
+                    numArgs++  // add the "this" pointer as an argument
+                }
+                vmWriter.writeCall(subroutineName, numArgs)
+                // write the closing parenthesis
                 if (getText(peekToken()) != ")") {
                     compilationError("Expected ')', got '${getText(peekToken())}' instead")
                 }
-                writeToken()  // write the closing parenthesis
+                writeToken()
+            }
+            // if the next token is not an opening square bracket, period, or opening parenthesis, this is a variable
+            else {
+                String name = getText(peekToken())
+                String kind = symbolTable.kindOf(name)
+                int index = symbolTable.indexOf(name)
+                compileIdentifier()  // write the variable name
+                // push the value of the variable onto the stack
+                vmWriter.writePush(kind, index)
             }
         }
         // handle expression in parentheses
@@ -769,7 +881,14 @@ class CompilationEngine {
         // handle unary operator
         else if (getText(peekToken()) == "-" || getText(peekToken()) == "~") {
             writeToken()  // write the unary operator
+            // compile the term and the result will be pushed onto the stack
             compileTerm()
+            // write the VM command for the unary operator
+            if (getText(getLastToken()) == "-") {
+                vmWriter.writeCommand("neg")
+            } else if (getText(getLastToken()) == "~") {
+                vmWriter.writeCommand("not")
+            }
         }
         // decrement the indentation level
         unindent()
