@@ -529,29 +529,27 @@ class CompilationEngine {
         }
         // handle varname, varName[expression], subroutineCall
         else if (getType(peekToken()) == "identifier") {
-            writeToken()  // write the varName/className/subroutineName
-            // handle varName[expression]
-            if (getText(peekToken()) == "[") {
-                writeToken()  // write the opening square bracket
+            String lookaheadToken = getText(peekLookahead())
+            // if the next token is an opening square bracket, this is an array access
+            if (lookaheadToken == "[") {
+                compileIdentifier()  // write the variable name
+                // write the opening square bracket
+                writeToken()
+                // compile the expression and the index will be pushed onto the stack
                 compileExpression()
+                // write the closing square bracket
                 if (getText(peekToken()) != "]") {
                     compilationError("Expected ']', got '${getText(peekToken())}' instead")
                 }
-                writeToken()  // write the closing square bracket
+                writeToken()
             }
-            // handle identifier.subroutineName subroutine call
-            else if (getText(peekToken()) == ".") {
-                writeToken()  // write the period
-                compileIdentifier()  // write the subroutine name
+            // if the next token is a period or opening parenthesis, this is a subroutine call
+            else if (lookaheadToken == "." || lookaheadToken == "(") {
+                compileSubroutineCall()
             }
-            // handle rest of subroutine call
-            if (getText(peekToken()) == "(") {
-                writeToken()  // write the opening parenthesis
-                compileExpressionList()
-                if (getText(peekToken()) != ")") {
-                    compilationError("Expected ')', got '${getText(peekToken())}' instead")
-                }
-                writeToken()  // write the closing parenthesis
+            // if the next token is not an opening square bracket, period, or opening parenthesis, this is a variable
+            else {
+                compileIdentifier()  // write the variable name
             }
         }
         // handle expression in parentheses
