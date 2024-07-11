@@ -71,17 +71,6 @@ class CompilationEngine {
         writeToken()
     }
 
-    // read the next token
-    Node readToken() {
-        def token = tokens[tokenIndex++]
-        return token
-    }
-
-    // get the token that was just read
-    Node getLastToken() {
-        return tokenIndex > 0 ? tokens[tokenIndex - 1] : null
-    }
-
     // get a token without advancing the index
     Node peekToken() {
         return tokens[tokenIndex]
@@ -471,23 +460,21 @@ class CompilationEngine {
         // handle varname, varName[expression], subroutineCall
         else if (getType(peekToken()) == "identifier") {
             String lookaheadToken = getText(peekLookahead())
-            // if the next token is an opening square bracket, this is an array access
-            if (lookaheadToken == "[") {
-                writeExpectedType("identifier")  // write the variable name
-                // write the opening square bracket
-                writeExpectedToken("[")
-                // compile the expression and the index will be pushed onto the stack
-                compileExpression()
-                // write the closing square bracket
-                writeExpectedToken("]")
-            }
             // if the next token is a period or opening parenthesis, this is a subroutine call
-            else if (lookaheadToken == "." || lookaheadToken == "(") {
+            if (lookaheadToken == "." || lookaheadToken == "(") {
                 compileSubroutineCall()
             }
-            // if the next token is not an opening square bracket, period, or opening parenthesis, this is a variable
+            // if the next token is not a period or opening parenthesis, this is a variable or array access
             else {
                 writeExpectedType("identifier")  // write the variable name
+                // if the next token is an opening square bracket, this is an array access
+                if (getText(peekToken()) == "[") {
+                    writeExpectedToken("[")
+                    // compile the expression and the index will be pushed onto the stack
+                    compileExpression()
+                    // write the closing square bracket
+                    writeExpectedToken("]")
+                }
             }
         }
         // handle expression in parentheses
