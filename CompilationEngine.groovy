@@ -51,6 +51,26 @@ class CompilationEngine {
         writeString("<$type> $text </$type>")
     }
 
+    // write the current token and check the text against an expected value
+    // @param expected the expected text of the token
+    // @throws CompilationError if the text of the token does not match the expected value
+    void writeExpectedToken(String expected) {
+        if (getText(peekToken()) != expected) {
+            compilationError("Expected '$expected', got '${getText(peekToken())}' instead")
+        }
+        writeToken()
+    }
+
+    // write the current token and check the type against an expected value
+    // @param expected the expected type of the token
+    // @throws CompilationError if the type of the token does not match the expected value
+    void writeExpectedType(String expected) {
+        if (getType(peekToken()) != expected) {
+            compilationError("Expected a token of type '$expected', got '${getType(peekToken())}' instead")
+        }
+        writeToken()
+    }
+
     // read the next token
     Node readToken() {
         def token = tokens[tokenIndex++]
@@ -97,23 +117,16 @@ class CompilationEngine {
 
     // compile a class
     void compileClass() {
-        // check that the current token is "class"
-        if (getText(peekToken()) != "class") {
-            compilationError("Expected 'class', got '${getText(peekToken())}' instead")
-        }
         // write the start of the class
         writeString("<class>")
         // increment the indentation level
         indent()
         // write the class keyword
-        writeToken()
+        writeExpectedToken("class")
         // write the class name if it is an identifier
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the class var declarations
         while (getText(peekToken()) == "static" || getText(peekToken()) == "field") {
             compileClassVarDec()
@@ -123,22 +136,11 @@ class CompilationEngine {
             compileSubroutine()
         }
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // decrement the indentation level
         unindent()
         // write the end of the class
         writeString("</class>")
-    }
-
-    // compile an identifier
-    void compileIdentifier() {
-        if (getType(peekToken()) != "identifier") {
-            compilationError("Expected an identifier, got '${getText(peekToken())}' instead")
-        }
-        writeToken()
     }
 
     // compile a class var declaration
@@ -152,17 +154,14 @@ class CompilationEngine {
         // write the type
         compileType()
         // write the variable name
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the rest of the variable names
         while (getText(peekToken()) == ",") {
-            writeToken()  // write the comma
-            compileIdentifier()
+            writeExpectedToken(",")
+            writeExpectedType("identifier")
         }
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the class var declaration
@@ -170,6 +169,7 @@ class CompilationEngine {
     }
 
     // compile a type
+    // @throws CompilationError if the next token is not a type
     void compileType() {
         if (getText(peekToken()).matches("int|char|boolean") || getType(peekToken()) == "identifier") {
             writeToken()
@@ -188,24 +188,18 @@ class CompilationEngine {
         writeToken()
         // write the return type
         if (getText(peekToken()) == "void") {
-            writeToken()
+            writeExpectedToken("void")
         } else {
             compileType()
         }
         // write the subroutine name
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the opening parenthesis
-        if (getText(peekToken()) != "(") {
-            compilationError("Expected '(', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("(")
         // compile the parameter list
         compileParameterList()
         // write the closing parenthesis
-        if (getText(peekToken()) != ")") {
-            compilationError("Expected ')', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(")")
         // compile the subroutine body
         compileSubroutineBody()
         // decrement the indentation level
@@ -225,15 +219,15 @@ class CompilationEngine {
             // write the type
             compileType()
             // write the variable name
-            compileIdentifier()
+            writeExpectedType("identifier")
             // write the rest of the parameters
             while (getText(peekToken()) == ",") {
                 // write the comma
-                writeToken()
+                writeExpectedToken(",")
                 // write the type
                 compileType()
                 // write the variable name
-                compileIdentifier()
+                writeExpectedType("identifier")
             }
         }
         // decrement the indentation level
@@ -249,10 +243,7 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the var declarations
         while (getText(peekToken()) == "var") {
             compileVarDec()
@@ -260,10 +251,7 @@ class CompilationEngine {
         // compile the statements
         compileStatements()
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // decrement the indentation level
         unindent()
         // write the end of the subroutine body
@@ -277,21 +265,18 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the var keyword
-        writeToken()
+        writeExpectedToken("var")
         // write the type
         compileType()
         // write the variable name
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the rest of the variable names
         while (getText(peekToken()) == ",") {
-            writeToken()  // write the comma
-            compileIdentifier()
+            writeExpectedToken(",")
+            writeExpectedType("identifier")
         }
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the var declaration
@@ -331,30 +316,21 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the let keyword
-        writeToken()
+        writeExpectedToken("let")
         // write the variable name
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the array index if it exists
         if (getText(peekToken()) == "[") {
-            writeToken()  // write the opening square bracket
+            writeExpectedToken("[")  // write the opening square bracket
             compileExpression()
-            if (getText(peekToken()) != "]") {
-                compilationError("Expected ']', got '${getText(peekToken())}' instead")
-            }
-            writeToken()  // write the closing square bracket
+            writeExpectedToken("]")  // write the closing square bracket
         }
         // write the equals sign
-        if (getText(peekToken()) != "=") {
-            compilationError("Expected '=', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("=")
         // compile the expression
         compileExpression()
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the let statement
@@ -368,46 +344,29 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the if keyword
-        writeToken()
+        writeExpectedToken("if")
         // write the opening parenthesis
-        if (getText(peekToken()) != "(") {
-            compilationError("Expected '(', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("(")
         // compile the expression
         compileExpression()
         // write the closing parenthesis
-        if (getText(peekToken()) != ")") {
-            compilationError("Expected ')', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(")")
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the statements
         compileStatements()
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // write the else clause if it exists
         if (getText(peekToken()) == "else") {
-            writeToken()  // write the else keyword
+            // write the else keyword
+            writeExpectedToken("else")
             // write the opening curly brace
-            if (getText(peekToken()) != "{") {
-                compilationError("Expected '{', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("{")
             // compile the statements
             compileStatements()
             // write the closing curly brace
-            if (getText(peekToken()) != "}") {
-                compilationError("Expected '}', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("}")
         }
         // decrement the indentation level
         unindent()
@@ -422,31 +381,19 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the while keyword
-        writeToken()
+        writeExpectedToken("while")
         // write the opening parenthesis
-        if (getText(peekToken()) != "(") {
-            compilationError("Expected '(', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("(")
         // compile the expression
         compileExpression()
         // write the closing parenthesis
-        if (getText(peekToken()) != ")") {
-            compilationError("Expected ')', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(")")
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the statements
         compileStatements()
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // decrement the indentation level
         unindent()
         // write the end of the while statement
@@ -460,14 +407,11 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the do keyword
-        writeToken()
+        writeExpectedToken("do")
         // compile the subroutine call
         compileSubroutineCall()
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the do statement
@@ -481,16 +425,13 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the return keyword
-        writeToken()
+        writeExpectedToken("return")
         // write the expression if it exists
         if (getText(peekToken()) != ";") {
             compileExpression()
         }
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the return statement
@@ -532,16 +473,13 @@ class CompilationEngine {
             String lookaheadToken = getText(peekLookahead())
             // if the next token is an opening square bracket, this is an array access
             if (lookaheadToken == "[") {
-                compileIdentifier()  // write the variable name
+                writeExpectedType("identifier")  // write the variable name
                 // write the opening square bracket
-                writeToken()
+                writeExpectedToken("[")
                 // compile the expression and the index will be pushed onto the stack
                 compileExpression()
                 // write the closing square bracket
-                if (getText(peekToken()) != "]") {
-                    compilationError("Expected ']', got '${getText(peekToken())}' instead")
-                }
-                writeToken()
+                writeExpectedToken("]")
             }
             // if the next token is a period or opening parenthesis, this is a subroutine call
             else if (lookaheadToken == "." || lookaheadToken == "(") {
@@ -549,17 +487,14 @@ class CompilationEngine {
             }
             // if the next token is not an opening square bracket, period, or opening parenthesis, this is a variable
             else {
-                compileIdentifier()  // write the variable name
+                writeExpectedType("identifier")  // write the variable name
             }
         }
         // handle expression in parentheses
         else if (getText(peekToken()) == "(") {
-            writeToken()  // write the opening parenthesis
+            writeExpectedToken("(")  // write the opening parenthesis
             compileExpression()
-            if (getText(peekToken()) != ")") {
-                compilationError("Expected ')', got '${getText(peekToken())}' instead")
-            }
-            writeToken()  // write the closing parenthesis
+            writeExpectedToken(")")  // write the closing parenthesis
         }
         // handle unary operator
         else if (getText(peekToken()) == "-" || getText(peekToken()) == "~") {
@@ -579,21 +514,15 @@ class CompilationEngine {
             writeToken()  // write the varName/className/subroutineName
             // if the next token is a period, write it and the subroutine name
             if (getText(peekToken()) == ".") {
-                writeToken()  // write the period
-                compileIdentifier()  // write the subroutine name
+                writeExpectedToken(".")
+                writeExpectedType("identifier")  // write the subroutine name
             }
             // write the opening parenthesis
-            if (getText(peekToken()) != "(") {
-                compilationError("Expected '(', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("(")
             // compile the expression list
             compileExpressionList()
             // write the closing parenthesis
-            if (getText(peekToken()) != ")") {
-                compilationError("Expected ')', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken(")")
         }
     }
 
@@ -611,7 +540,7 @@ class CompilationEngine {
             numExpressions++
             // compile the rest of the expressions
             while (getText(peekToken()) == ",") {
-                writeToken()  // write the comma
+                writeExpectedToken(",")
                 compileExpression()
                 numExpressions++
             }
