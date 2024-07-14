@@ -350,7 +350,7 @@ class CodeWriter {
                  |""".stripMargin() + pushD()
     }
 
-    // Template for push local, this, that, argument, temp, pointer, static
+    // Template for push local, this, that, argument
     // @param segment is the memory segment
     // @param index is the index of the memory segment
     // @param isDirect is a flag to indicate if the index is direct or indirect
@@ -382,7 +382,7 @@ class CodeWriter {
                  |""".stripMargin() + pushD()
     }
 
-    // Template for pop local, this, that, argument, temp, pointer, static
+    // Template for pop local, this, that, argument
     // @param segment is the memory segment
     // @param index is the index of the memory segment
     // @param isDirect is a flag to indicate if the index is direct or indirect

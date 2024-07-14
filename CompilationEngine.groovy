@@ -89,15 +89,24 @@ class CompilationEngine {
         writeString("<$type> $text </$type>")
     }
 
-    // read the next token
-    Node readToken() {
-        def token = tokens[tokenIndex++]
-        return token
+    // write the current token and check the text against an expected value
+    // @param expected the expected text of the token
+    // @throws CompilationError if the text of the token does not match the expected value
+    void writeExpectedToken(String expected) {
+        if (getText(peekToken()) != expected) {
+            compilationError("Expected '$expected', got '${getText(peekToken())}' instead")
+        }
+        writeToken()
     }
 
-    // get the token that was just read
-    Node getLastToken() {
-        return tokenIndex > 0 ? tokens[tokenIndex - 1] : null
+    // write the current token and check the type against an expected value
+    // @param expected the expected type of the token
+    // @throws CompilationError if the type of the token does not match the expected value
+    void writeExpectedType(String expected) {
+        if (getType(peekToken()) != expected) {
+            compilationError("Expected a token of type '$expected', got '${getType(peekToken())}' instead")
+        }
+        writeToken()
     }
 
     // get a token without advancing the index
@@ -136,23 +145,16 @@ class CompilationEngine {
 
     // compile a class
     void compileClass() {
-        // check that the current token is "class"
-        if (getText(peekToken()) != "class") {
-            compilationError("Expected 'class', got '${getText(peekToken())}' instead")
-        }
         // write the start of the class
         writeString("<class>")
         // increment the indentation level
         indent()
         // write the class keyword
-        writeToken()
+        writeExpectedToken("class")
         // write the class name if it is an identifier
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the class var declarations
         while (getText(peekToken()) == "static" || getText(peekToken()) == "field") {
             compileClassVarDec()
@@ -162,22 +164,11 @@ class CompilationEngine {
             compileSubroutine()
         }
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // decrement the indentation level
         unindent()
         // write the end of the class
         writeString("</class>")
-    }
-
-    // compile an identifier
-    void compileIdentifier() {
-        if (getType(peekToken()) != "identifier") {
-            compilationError("Expected an identifier, got '${getText(peekToken())}' instead")
-        }
-        writeToken()
     }
 
     // compile a class var declaration
@@ -194,22 +185,19 @@ class CompilationEngine {
         compileType()
         // write the variable name
         String name = getText(peekToken())
-        compileIdentifier()
+        writeExpectedType("identifier")
         // define the class variable in the symbol table
         symbolTable.define(name, type, kind)
         // write the rest of the variable names
         while (getText(peekToken()) == ",") {
-            writeToken()  // write the comma
+            writeExpectedToken(",")
             name = getText(peekToken())
-            compileIdentifier()
+            writeExpectedType("identifier")
             // define the class variable in the symbol table
             symbolTable.define(name, type, kind)
         }
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the class var declaration
@@ -217,6 +205,7 @@ class CompilationEngine {
     }
 
     // compile a type
+    // @throws CompilationError if the next token is not a type
     void compileType() {
         if (getText(peekToken()).matches("int|char|boolean") || getType(peekToken()) == "identifier") {
             writeToken()
@@ -238,18 +227,15 @@ class CompilationEngine {
         writeToken()
         // write the return type
         if (getText(peekToken()) == "void") {
-            writeToken()
+            writeExpectedToken("void")
         } else {
             compileType()
         }
         // write the subroutine name
         String subroutineName = getText(peekToken())
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the opening parenthesis
-        if (getText(peekToken()) != "(") {
-            compilationError("Expected '(', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("(")
         // if the subroutine is a method, define "this" as an argument
         if (subroutineKind == "method") {
             symbolTable.define("this", currentClassName, "argument")
@@ -257,10 +243,7 @@ class CompilationEngine {
         // compile the parameter list
         compileParameterList()
         // write the closing parenthesis
-        if (getText(peekToken()) != ")") {
-            compilationError("Expected ')', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(")")
         // compile the subroutine body
         compileSubroutineBody(subroutineKind, subroutineName)
         // decrement the indentation level
@@ -282,19 +265,19 @@ class CompilationEngine {
             compileType()
             // write the variable name
             String name = getText(peekToken())
-            compileIdentifier()
+            writeExpectedType("identifier")
             // define the parameter in the symbol table
             symbolTable.define(name, type, "argument")
             // write the rest of the parameters
             while (getText(peekToken()) == ",") {
                 // write the comma
-                writeToken()
+                writeExpectedToken(",")
                 // write the type
                 type = getText(peekToken())
                 compileType()
                 // write the variable name
                 name = getText(peekToken())
-                compileIdentifier()
+                writeExpectedType("identifier")
                 // define the parameter in the symbol table
                 symbolTable.define(name, type, "argument")
             }
@@ -314,10 +297,7 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the var declarations
         while (getText(peekToken()) == "var") {
             compileVarDec()
@@ -346,10 +326,7 @@ class CompilationEngine {
         // compile the statements
         compileStatements()
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // decrement the indentation level
         unindent()
         // write the end of the subroutine body
@@ -363,28 +340,25 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the var keyword
-        writeToken()
+        writeExpectedToken("var")
         // write the type
         String type = getText(peekToken())
         compileType()
         // write the variable name
         String name = getText(peekToken())
-        compileIdentifier()
+        writeExpectedType("identifier")
         // define the variable in the symbol table
         symbolTable.define(name, type, "local")
         // write the rest of the variable names
         while (getText(peekToken()) == ",") {
-            writeToken()  // write the comma
+            writeExpectedToken(",")
             name = getText(peekToken())
-            compileIdentifier()
+            writeExpectedType("identifier")
             // define the variable in the symbol table
             symbolTable.define(name, type, "local")
         }
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the var declaration
@@ -424,31 +398,25 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the let keyword
-        writeToken()
+        writeExpectedToken("let")
         // write the variable name
         String name = getText(peekToken())
         String kind = symbolTable.kindOf(name)
         int index = symbolTable.indexOf(name)
-        compileIdentifier()
+        writeExpectedType("identifier")
         // write the array index if it exists
         if (getText(peekToken()) == "[") {
-            writeToken()  // write the opening square bracket
+            writeExpectedToken("[")  // write the opening square bracket
             // compile the expression and the index will be pushed onto the stack
             compileExpression()
             // push address of the variable onto the stack
             vmWriter.writePush(kind, index)
             // write the closing square bracket
-            if (getText(peekToken()) != "]") {
-                compilationError("Expected ']', got '${getText(peekToken())}' instead")
-            }
-            writeToken()  // write the closing square bracket
+            writeExpectedToken("]")
             // add the index to the base address
             vmWriter.writeCommand("add")
             // write the equals sign
-            if (getText(peekToken()) != "=") {
-                compilationError("Expected '=', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("=")
             // compile the expression and the result will be pushed onto the stack
             compileExpression()
             // pop the result of the expression into the array
@@ -458,20 +426,14 @@ class CompilationEngine {
             vmWriter.writePop("that", 0)  // pop the expression result into array[i]
         } else {
             // write the equals sign
-            if (getText(peekToken()) != "=") {
-                compilationError("Expected '=', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("=")
             // compile the expression and the result will be pushed onto the stack
             compileExpression()
             // pop the result of the expression into the variable
             vmWriter.writePop(kind, index)
         }
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the let statement
@@ -490,12 +452,9 @@ class CompilationEngine {
         String ifEndLabel = "IF_END" + ifCounter
         ifCounter++
         // write the if keyword
-        writeToken()
+        writeExpectedToken("if")
         // write the opening parenthesis
-        if (getText(peekToken()) != "(") {
-            compilationError("Expected '(', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("(")
         // compile the expression and the result will be pushed onto the stack
         compileExpression()
         // jump to the correct label based on the expression result
@@ -504,22 +463,13 @@ class CompilationEngine {
         // write the if true label
         vmWriter.writeLabel(ifTrueLabel)
         // write the closing parenthesis
-        if (getText(peekToken()) != ")") {
-            compilationError("Expected ')', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(")")
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the statements
         compileStatements()
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // write the else clause if it exists
         if (getText(peekToken()) == "else") {
             // if we completed the if statement, jump to the end
@@ -527,19 +477,13 @@ class CompilationEngine {
             // write the if false label
             vmWriter.writeLabel(ifFalseLabel)
             // write the else keyword
-            writeToken()
+            writeExpectedToken("else")
             // write the opening curly brace
-            if (getText(peekToken()) != "{") {
-                compilationError("Expected '{', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("{")
             // compile the statements
             compileStatements()
             // write the closing curly brace
-            if (getText(peekToken()) != "}") {
-                compilationError("Expected '}', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("}")
             // write the end label
             vmWriter.writeLabel(ifEndLabel)
         }
@@ -564,36 +508,24 @@ class CompilationEngine {
         String whileEndLabel = "WHILE_END" + whileCounter
         whileCounter++
         // write the while keyword
-        writeToken()
+        writeExpectedToken("while")
         // write the while label
         vmWriter.writeLabel(whileLabel)
         // write the opening parenthesis
-        if (getText(peekToken()) != "(") {
-            compilationError("Expected '(', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("(")
         // compile the expression and the result will be pushed onto the stack
         compileExpression()
         // jump out of the loop if the expression is zero
         vmWriter.writeCommand("not")  // negate result so that we jump if the expression *is* zero
         vmWriter.writeIfGoto(whileEndLabel)  // if the negated result is not zero (expression was zero), jump to the end of the loop
         // write the closing parenthesis
-        if (getText(peekToken()) != ")") {
-            compilationError("Expected ')', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(")")
         // write the opening curly brace
-        if (getText(peekToken()) != "{") {
-            compilationError("Expected '{', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("{")
         // compile the statements
         compileStatements()
         // write the closing curly brace
-        if (getText(peekToken()) != "}") {
-            compilationError("Expected '}', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken("}")
         // write the end of the loop
         vmWriter.writeGoto(whileLabel)  // go back to the start of the loop
         vmWriter.writeLabel(whileEndLabel)  // end of the loop
@@ -610,16 +542,13 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the do keyword
-        writeToken()
+        writeExpectedToken("do")
         // compile the subroutine call
         compileSubroutineCall()
         // pop the result of the subroutine call off the stack to discard it
         vmWriter.writePop("temp", 0)
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // decrement the indentation level
         unindent()
         // write the end of the do statement
@@ -633,10 +562,10 @@ class CompilationEngine {
             String name = getText(peekToken())
             Boolean isMethod = false  // if the subroutine is a method, we need to add the 'this' pointer as an argument
             String subroutineName = ""
-            writeToken()  // write the varName/className/subroutineName
+            writeExpectedType("identifier")  // write the varName/className/subroutineName
             // if the next token is a period, write it and the subroutine name
             if (getText(peekToken()) == ".") {
-                writeToken()  // write the period
+                writeExpectedToken(".")
                 // determine if this is a variable or a class name
                 // if found in the symbol table, it is a variable, so the subroutine is a method
                 String type = symbolTable.typeOf(name)
@@ -653,7 +582,7 @@ class CompilationEngine {
                     // build name using the class name and the subroutine name
                     subroutineName = name + "." + getText(peekToken())
                 }
-                compileIdentifier()  // write the subroutine name
+                writeExpectedType("identifier")  // write the subroutine name
             } else {
                 // if no "." is found, this is a method of the current class
                 subroutineName = currentClassName + "." + name
@@ -661,10 +590,7 @@ class CompilationEngine {
                 isMethod = true
             }
             // write the opening parenthesis
-            if (getText(peekToken()) != "(") {
-                compilationError("Expected '(', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken("(")
             // compile the expression list
             int numArgs = compileExpressionList()
             if (isMethod) {
@@ -672,10 +598,7 @@ class CompilationEngine {
             }
             vmWriter.writeCall(subroutineName, numArgs)
             // write the closing parenthesis
-            if (getText(peekToken()) != ")") {
-                compilationError("Expected ')', got '${getText(peekToken())}' instead")
-            }
-            writeToken()
+            writeExpectedToken(")")
         }
     }
 
@@ -686,7 +609,7 @@ class CompilationEngine {
         // increment the indentation level
         indent()
         // write the return keyword
-        writeToken()
+        writeExpectedToken("return")
         // write the expression if it exists
         if (getText(peekToken()) != ";") {
             // compile the expression and the result will be pushed onto the stack
@@ -697,10 +620,7 @@ class CompilationEngine {
             vmWriter.writePush("constant", 0)
         }
         // write the semicolon
-        if (getText(peekToken()) != ";") {
-            compilationError("Expected ';', got '${getText(peekToken())}' instead")
-        }
-        writeToken()
+        writeExpectedToken(";")
         // write the return statement in VM
         vmWriter.writeReturn()
         // decrement the indentation level
@@ -789,51 +709,39 @@ class CompilationEngine {
         // handle varname, varName[expression], subroutineCall
         else if (getType(peekToken()) == "identifier") {
             String lookaheadToken = getText(peekLookahead())
-            // if the next token is an opening square bracket, this is an array access
-            if (lookaheadToken == "[") {
-                String name = getText(peekToken())
-                String kind = symbolTable.kindOf(name)
-                int index = symbolTable.indexOf(name)
-                compileIdentifier()  // write the variable name
-                // write the opening square bracket
-                writeToken()
-                // compile the expression and the index will be pushed onto the stack
-                compileExpression()
-                // push the address of the variable onto the stack
-                vmWriter.writePush(kind, index)
-                // add the index to the base address
-                vmWriter.writeCommand("add")
-                // pop the result of the expression into the array
-                vmWriter.writePop("pointer", 1)  // set THAT to the address of the array[i]
-                vmWriter.writePush("that", 0)  // push the value of the array[i] onto the stack
-                // write the closing square bracket
-                if (getText(peekToken()) != "]") {
-                    compilationError("Expected ']', got '${getText(peekToken())}' instead")
-                }
-                writeToken()
-            }
             // if the next token is a period or opening parenthesis, this is a subroutine call
-            else if (lookaheadToken == "." || lookaheadToken == "(") {
+            if (lookaheadToken == "." || lookaheadToken == "(") {
                 compileSubroutineCall()
             }
-            // if the next token is not an opening square bracket, period, or opening parenthesis, this is a variable
+            // if the next token is not an opening square bracket, period, or opening parenthesis, this is a variable or array access
             else {
                 String name = getText(peekToken())
                 String kind = symbolTable.kindOf(name)
                 int index = symbolTable.indexOf(name)
-                compileIdentifier()  // write the variable name
+                writeExpectedType("identifier")  // write the variable name
                 // push the value of the variable onto the stack
                 vmWriter.writePush(kind, index)
+                // if the next token is an opening square bracket, this is an array access
+                if (getText(peekToken()) == "[") {
+                    // write the opening square bracket
+                    writeExpectedToken("[")
+                    // compile the expression and the index will be pushed onto the stack
+                    compileExpression()
+                    // add the index to the base address
+                    vmWriter.writeCommand("add")
+                    // pop the result of the expression into the array
+                    vmWriter.writePop("pointer", 1)  // set THAT to the address of the array[i]
+                    vmWriter.writePush("that", 0)  // push the value of the array[i] onto the stack
+                    // write the closing square bracket
+                    writeExpectedToken("]")
+                }
             }
         }
         // handle expression in parentheses
         else if (getText(peekToken()) == "(") {
-            writeToken()  // write the opening parenthesis
+            writeExpectedToken("(")  // write the opening parenthesis
             compileExpression()
-            if (getText(peekToken()) != ")") {
-                compilationError("Expected ')', got '${getText(peekToken())}' instead")
-            }
-            writeToken()  // write the closing parenthesis
+            writeExpectedToken(")")  // write the closing parenthesis
         }
         // handle unary operator
         else if (getText(peekToken()) == "-" || getText(peekToken()) == "~") {
@@ -868,7 +776,7 @@ class CompilationEngine {
             numExpressions++
             // compile the rest of the expressions
             while (getText(peekToken()) == ",") {
-                writeToken()  // write the comma
+                writeExpectedToken(",")
                 compileExpression()
                 numExpressions++
             }

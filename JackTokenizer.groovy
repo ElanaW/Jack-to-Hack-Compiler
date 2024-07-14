@@ -10,7 +10,9 @@ class JackTokenizer {
     private final File jackFile
     private final DataInputStream jackInputStream
     private String currentToken
+    private String currentTokenType
     private String nextToken
+    private String nextTokenType
 
     // types of tokens
     static final String KEYWORD = "keyword"
@@ -25,9 +27,7 @@ class JackTokenizer {
     static final String[] KEYWORDS = ["class", "constructor", "function", "method", "field", "static", "var", "int", "char", "boolean", "void", "true", "false", "null", "this", "let", "do", "if", "else", "while", "return"]
     static final String IDENTIFIER_FIRST_SYMBOL_REGEX = "[a-zA-Z_]"
     static final String IDENTIFIER_SYMBOL_REGEX = "[a-zA-Z0-9_]"
-    static final String IDENTIFIER_REGEX = IDENTIFIER_FIRST_SYMBOL_REGEX + IDENTIFIER_SYMBOL_REGEX + "*"
     static final String DIGIT_REGEX = "[0-9]"
-    static final String INT_CONST_REGEX = DIGIT_REGEX + "+"
 
     // Constructor for the JackTokenizer class
     // @param jackFile the .jack file to tokenize
@@ -35,7 +35,9 @@ class JackTokenizer {
         this.jackFile = jackFile
         this.jackInputStream = jackFile.newDataInputStream()
         this.currentToken = null
+        this.currentTokenType = null
         this.nextToken = null
+        this.nextTokenType = null
         loadNextToken()
     }
 
@@ -47,22 +49,13 @@ class JackTokenizer {
     // Gets the current token and advances the input
     void advance() {
         currentToken = nextToken
+        currentTokenType = nextTokenType
         loadNextToken()
     }
 
     // Returns the type of the current token
     String tokenType() {
-        if (KEYWORDS.contains(currentToken)) {
-            return KEYWORD
-        } else if (SYMBOLS.contains(currentToken)) {
-            return SYMBOL
-        } else if (currentToken.matches(IDENTIFIER_REGEX)) {
-            return IDENTIFIER
-        } else if (currentToken.matches(INT_CONST_REGEX)) {
-            return INT_CONST
-        } else {
-            return STRING_CONST
-        }
+        return currentTokenType
     }
 
     // Returns the current token
@@ -80,6 +73,7 @@ class JackTokenizer {
     private void loadNextToken() {
         // clear the next token which will be set in the loop if there are more tokens
         nextToken = null
+        nextTokenType = null
         // load the next character from the file
         String nextChar = loadNextChar()
         // loop until a token is found or the end of the file is reached
@@ -126,6 +120,7 @@ class JackTokenizer {
             // check for symbols
             if (SYMBOLS.contains(nextChar)) {
                 nextToken = nextChar
+                nextTokenType = SYMBOL
                 return
             }
 
@@ -142,6 +137,11 @@ class JackTokenizer {
                     jackInputStream.skip(-1)
                 }
                 nextToken = token
+                if (KEYWORDS.contains(token)) {
+                    nextTokenType = KEYWORD
+                } else {
+                    nextTokenType = IDENTIFIER
+                }
                 return
             }
 
@@ -154,6 +154,7 @@ class JackTokenizer {
                     nextChar = loadNextChar()
                 }
                 nextToken = token
+                nextTokenType = STRING_CONST
                 return
             }
 
@@ -170,6 +171,7 @@ class JackTokenizer {
                     jackInputStream.skip(-1)
                 }
                 nextToken = token
+                nextTokenType = INT_CONST
                 return
             }
 
