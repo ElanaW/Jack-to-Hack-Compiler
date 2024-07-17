@@ -203,7 +203,7 @@ class CodeWriter {
         // reposition LCL to SP
         asmFile.append("""@SP
                          |D=M
-                         |@
+                         |@5
                          |D=D-A
                          |@${numArgs}
                          |D=D-A
